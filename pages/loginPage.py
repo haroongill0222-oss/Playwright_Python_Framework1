@@ -9,6 +9,7 @@ class LoginPage(BasePage):
 
     def login(self, username, password):
         self.page.locator(self.username_input).wait_for(state="visible")
+
         self.enter_text(self.username_input, username)
         self.enter_text(self.password_input, password)
         self.select_element(self.login_button)
