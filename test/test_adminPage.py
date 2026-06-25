@@ -26,5 +26,5 @@ def test_add_job_title(logged_in_page,job_title,job_description,job_note):
 
     # Verification
     expect(
-        logged_in_page.locator("//h6[text()='Job Titles']")
-    ).to_be_visible()
+        logged_in_page.get_by_text("Successfully Saved")
+    ).to_be_visible(timeout=10000)
