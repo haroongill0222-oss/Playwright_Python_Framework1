@@ -1,35 +1,37 @@
 import os
 import pytest
+import allure
 from playwright.sync_api import sync_playwright
+
 from pages.loginPage import LoginPage
 from utilities.configReader import ConfigReader
 
+from utilities.logger import setup_logger
+
+logger = setup_logger()
+
+# Authentication state file
 AUTH_STATE_PATH = ".auth/user_state.json"
 
 
-# -------------------------------
-# Playwright Instance
-# -------------------------------
-
+# ---------------------------------------------------------
+# PLAYWRIGHT INSTANCE
+# ---------------------------------------------------------
 @pytest.fixture(scope="session")
 def playwright_instance():
     with sync_playwright() as p:
         yield p
 
 
-# -------------------------------
-# Browser Fixture
-# -------------------------------
-
+# ---------------------------------------------------------
+# BROWSER SETUP
+# ---------------------------------------------------------
 @pytest.fixture(scope="session", params=["chromium"])
 def browser(request, playwright_instance):
 
     browser_name = request.param
 
-    browser = getattr(
-        playwright_instance,
-        browser_name
-    ).launch(
+    browser = getattr(playwright_instance, browser_name).launch(
         headless=False,
         slow_mo=1000
     )
@@ -39,15 +41,15 @@ def browser(request, playwright_instance):
     browser.close()
 
 
-# -------------------------------
-# Login Once & Save Session
-# -------------------------------
-
+# ---------------------------------------------------------
+# LOGIN ONCE AND SAVE SESSION
+# ---------------------------------------------------------
 @pytest.fixture(scope="session", autouse=True)
 def create_auth_state(browser):
 
     os.makedirs(".auth", exist_ok=True)
 
+    logger.info("Login process started")
     page = browser.new_page()
 
     page.goto(ConfigReader.QA_URL)
@@ -59,27 +61,25 @@ def create_auth_state(browser):
         ConfigReader.PASSWORD
     )
 
-    page.wait_for_url("**/dashboard/index")
+    page.wait_for_url("**/dashboard/**")
 
-    page.context.storage_state(
-        path=AUTH_STATE_PATH
-    )
+    page.context.storage_state(path=AUTH_STATE_PATH)
 
-    print("\nLogin executed only once")
+    print("\n Login executed only once")
 
     page.close()
 
     yield
 
+    # Cleanup after execution
     if os.path.exists(AUTH_STATE_PATH):
         os.remove(AUTH_STATE_PATH)
-        print("\nSession file deleted")
+        print("\n Session file deleted")
 
 
-# -------------------------------
-# Logged In Page
-# -------------------------------
-
+# ---------------------------------------------------------
+# LOGGED-IN PAGE FIXTURE
+# ---------------------------------------------------------
 @pytest.fixture()
 def logged_in_page(browser, create_auth_state):
 
@@ -91,9 +91,9 @@ def logged_in_page(browser, create_auth_state):
 
     page.goto(ConfigReader.QA_URL)
 
-    page.wait_for_url("**/dashboard/index")
+    page.wait_for_url("**/dashboard/**")
 
-    print(f"Current URL: {page.url}")
+    print(f"\nCurrent URL: {page.url}")
 
     yield page
 
@@ -101,10 +101,9 @@ def logged_in_page(browser, create_auth_state):
     context.close()
 
 
-# -------------------------------
-# Normal Page
-# -------------------------------
-
+# ---------------------------------------------------------
+# NORMAL PAGE FIXTURE
+# ---------------------------------------------------------
 @pytest.fixture()
 def page(browser):
 
@@ -113,3 +112,29 @@ def page(browser):
     yield page
 
     page.close()
+
+
+# ---------------------------------------------------------
+# 🔥 ALLURE SCREENSHOT ON FAILURE HOOK (ADDED)
+# ---------------------------------------------------------
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+
+    outcome = yield
+    report = outcome.get_result()
+
+    # Only capture screenshot when test fails in execution phase
+    if report.when == "call" and report.failed:
+
+        page = item.funcargs.get("logged_in_page") or item.funcargs.get("page")
+
+        if page:
+
+            try:
+                allure.attach(
+                    page.screenshot(full_page=True),
+                    name=f"Failure Screenshot - {item.name}",
+                    attachment_type=allure.attachment_type.PNG
+                )
+            except Exception as e:
+                print(f"Failed to capture screenshot: {e}")
